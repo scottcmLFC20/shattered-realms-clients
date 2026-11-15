@@ -7,7 +7,11 @@ These use the game's GMCP feature, which Mudlet and MUSHclient both support.
 
 ## Mudlet
 
-**Quick install:** connect to the game, then paste this into Mudlet's input line and press Enter:
+**Nothing to do:** when you log in to Shattered Realms, Mudlet installs this
+package by itself and keeps it up to date. If it never appears, check
+Settings -> General -> "Allow server to install script packages", then reconnect.
+
+**Manual install:** connect to the game, then paste this into Mudlet's input line and press Enter:
 
 ```
 lua installPackage("https://raw.githubusercontent.com/scottcmLFC20/shattered-realms-clients/main/mudlet/ShatteredRealms.xml")
