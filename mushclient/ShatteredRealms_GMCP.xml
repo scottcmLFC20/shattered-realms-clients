@@ -10,7 +10,7 @@
    save_state="y"
    date_written="2026-11-14 00:00:00"
    requires="4.40"
-   version="1.0"
+   version="1.1"
    >
 <description trim="y">
 Shows health, mana and your enemy's health in a movable window,
@@ -31,6 +31,9 @@ local FONT = "f"
 
 -- No moves bar: the server intentionally never sends moves.
 local st = { hp = 0, mana = 0, maxhp = 1, maxmana = 1, enemy = "", enemypct = 0 }
+-- false until the first GMCP message arrives. GMCP is only switched on when
+-- MUSHclient connects with this plugin already installed.
+local got_data = false
 local mwin = nil
 
 local function send_gmcp(msg)
@@ -64,7 +67,10 @@ local function redraw()
       st.hp, st.maxhp, 0x1E1EC8, 0x07073A)
   bar(TITLE + 24, string.format("Mana %d / %d", st.mana, st.maxmana),
       st.mana, st.maxmana, 0xDC5028, 0x3A1408)
-  if st.enemy ~= "" then
+  if not got_data then
+    WindowText(WIN, FONT, "No data yet: disconnect and reconnect", 4, TITLE + 46,
+               W, H, 0x00FFFF, false)
+  elseif st.enemy ~= "" then
     bar(TITLE + 44, string.format("%s %d%%", st.enemy, st.enemypct),
         st.enemypct, 100, 0x1478C8, 0x052038)
   end
@@ -78,6 +84,10 @@ function OnPluginInstall()
   WindowFont(WIN, FONT, "Fixedsys", 9, false, false, false, false)
   movewindow.add_drag_handler(WIN, 0, 0, 0, TITLE)
   redraw()
+  if IsConnected() then
+    ColourNote("yellow", "", "Shattered Realms bars installed. Disconnect and "
+               .. "reconnect to start them (GMCP is only switched on at connect).")
+  end
 end
 
 function OnPluginSaveState()
@@ -134,6 +144,7 @@ function OnPluginTelnetSubnegotiation(msg_type, data)
   local ok, decoded = pcall(json.decode, body)
   if not ok or type(decoded) ~= "table" then return end
   handler(decoded)
+  got_data = true
   redraw()
 end
 ]]>

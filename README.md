@@ -29,6 +29,7 @@ What you get:
 1. Download [`mushclient/ShatteredRealms_GMCP.xml`](mushclient/ShatteredRealms_GMCP.xml)
    (click the file, then the download button).
 2. In MUSHclient: File -> Plugins -> Add, and pick the file.
+3. Disconnect and reconnect. MUSHclient only switches the bars on when it connects.
 
 What you get: a small window with HP, Mana and Enemy bars. Drag its title strip to move it.
 
