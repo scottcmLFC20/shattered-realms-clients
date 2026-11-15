@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<muclient>
+<plugin
+   name="ShatteredRealms_GMCP"
+   author="Shattered Realms"
+   id="5b2e9c41a7d34f80b6c1e3d2"
+   language="Lua"
+   purpose="Health, mana and enemy bars from GMCP"
+   save_state="y"
+   date_written="2026-11-14 00:00:00"
+   requires="4.40"
+   version="1.0"
+   >
+<description trim="y">
+Shows health, mana and your enemy's health in a movable window,
+using the GMCP data sent by Shattered Realms.
+Drag the window by its title strip to move it.
+</description>
+</plugin>
+
+<script>
+<![CDATA[
+require "json"
+require "movewindow"
+
+local GMCP = 201
+local WIN = "sr_gmcp_" .. GetPluginID()
+local W, H, TITLE = 260, 86, 14
+local FONT = "f"
+
+-- No moves bar: the server intentionally never sends moves.
+local st = { hp = 0, mana = 0, maxhp = 1, maxmana = 1, enemy = "", enemypct = 0 }
+local mwin = nil
+
+local function send_gmcp(msg)
+  SendPkt("\255\250" .. string.char(GMCP) .. msg .. "\255\240")
+end
+
+local function clamp(v, lo, hi)
+  if v < lo then return lo end
+  if v > hi then return hi end
+  return v
+end
+
+local function bar(y, label, cur, max, fill, back)
+  local x1, x2, h = 4, W - 4, 16
+  WindowRectOp(WIN, 2, x1, y, x2, y + h, back)             -- background
+  local frac = 0
+  if max > 0 then frac = clamp(cur / max, 0, 1) end
+  local fx = x1 + math.floor((x2 - x1) * frac)
+  if fx > x1 then WindowRectOp(WIN, 2, x1, y, fx, y + h, fill) end
+  WindowRectOp(WIN, 1, x1, y, x2, y + h, 0x808080)          -- frame
+  WindowText(WIN, FONT, label, x1 + 4, y + 2, x2 - 2, y + h, 0xFFFFFF, false)
+end
+
+local function redraw()
+  if not mwin then return end
+  WindowRectOp(WIN, 2, 0, 0, W, H, 0x201818)                -- window background
+  WindowRectOp(WIN, 2, 0, 0, W, TITLE, 0x504040)            -- drag strip
+  WindowText(WIN, FONT, "Shattered Realms", 4, 1, W, TITLE, 0xFFFFFF, false)
+  -- colours are BGR in MUSHclient
+  bar(TITLE + 4, string.format("HP %d / %d", st.hp, st.maxhp),
+      st.hp, st.maxhp, 0x1E1EC8, 0x07073A)
+  bar(TITLE + 24, string.format("Mana %d / %d", st.mana, st.maxmana),
+      st.mana, st.maxmana, 0xDC5028, 0x3A1408)
+  if st.enemy ~= "" then
+    bar(TITLE + 44, string.format("%s %d%%", st.enemy, st.enemypct),
+        st.enemypct, 100, 0x1478C8, 0x052038)
+  end
+  WindowShow(WIN, true)
+end
+
+function OnPluginInstall()
+  mwin = movewindow.install(WIN, 6, 0)
+  WindowCreate(WIN, mwin.window_left, mwin.window_top, W, H, mwin.window_mode,
+               mwin.window_flags, 0x000000)
+  WindowFont(WIN, FONT, "Fixedsys", 9, false, false, false, false)
+  movewindow.add_drag_handler(WIN, 0, 0, 0, TITLE)
+  redraw()
+end
+
+function OnPluginSaveState()
+  if mwin then movewindow.save_state(WIN) end
+end
+
+function OnPluginClose()
+  WindowDelete(WIN)
+end
+
+function OnPluginDisable()
+  WindowShow(WIN, false)
+end
+
+function OnPluginEnable()
+  redraw()
+end
+
+function OnPluginTelnetRequest(msg_type, data)
+  if msg_type ~= GMCP then return false end
+  if data == "WILL" then
+    return true                       -- yes, we want GMCP
+  elseif data == "SENT_DO" then
+    send_gmcp('Core.Hello { "client": "MUSHclient", "version": "' .. Version() .. '" }')
+    send_gmcp('Core.Supports.Set [ "Char 1", "Room 1" ]')
+    return true
+  end
+  return false
+end
+
+local handlers = {}
+
+handlers["char.vitals"] = function(t)
+  st.hp = tonumber(t.hp) or st.hp
+  st.mana = tonumber(t.mana) or st.mana
+end
+
+handlers["char.maxstats"] = function(t)
+  st.maxhp = tonumber(t.maxhp) or st.maxhp
+  st.maxmana = tonumber(t.maxmana) or st.maxmana
+end
+
+handlers["char.status"] = function(t)
+  st.enemy = t.enemy or ""
+  st.enemypct = tonumber(t.enemypct) or 0
+end
+
+function OnPluginTelnetSubnegotiation(msg_type, data)
+  if msg_type ~= GMCP then return end
+  local pkg, body = string.match(data, "^([%w%._]+)%s*(.*)$")
+  if not pkg then return end
+  local handler = handlers[string.lower(pkg)]
+  if not handler then return end
+  local ok, decoded = pcall(json.decode, body)
+  if not ok or type(decoded) ~= "table" then return end
+  handler(decoded)
+  redraw()
+end
+]]>
+</script>
+</muclient>

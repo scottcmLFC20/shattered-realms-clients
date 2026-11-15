@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MudletPackage>
+<MudletPackage version="1.001">
+	<ScriptPackage>
+		<ScriptGroup isActive="yes" isFolder="yes">
+			<name>Shattered Realms</name>
+			<packageName>Shattered Realms</packageName>
+			<script></script>
+			<eventHandlerList />
+			<Script isActive="yes" isFolder="no">
+				<name>SR Gauges (library)</name>
+				<packageName></packageName>
+				<script>-- Shattered Realms: HP / Mana / Enemy bars along the bottom of the window.
+-- No moves bar: the server intentionally never sends moves.
+SR = SR or {}
+SR.state = SR.state or { hp = 0, mana = 0, maxhp = 1, maxmana = 1, enemy = "", enemypct = 0 }
+SR.BAR_H = 22
+SR.BAR_PAD = 3
+
+function SR.gaugeY()
+  local _, h = getMainWindowSize()
+  return h - SR.BAR_H - SR.BAR_PAD
+end
+
+function SR.buildGauges()
+  if SR.hpGauge then return end
+  setBorderBottom(SR.BAR_H + 2 * SR.BAR_PAD)
+  local y = SR.gaugeY()
+  local function make(name, x, r, g, b)
+    local gg = Geyser.Gauge:new({
+      name = name, x = x, y = y, width = "33%", height = SR.BAR_H,
+    })
+    gg.front:setColor(r, g, b)
+    gg.back:setColor(math.floor(r / 4), math.floor(g / 4), math.floor(b / 4))
+    gg:setValue(0, 1, "")
+    return gg
+  end
+  SR.hpGauge    = make("SR_hpGauge",    "0%",  200, 30, 30)
+  SR.manaGauge  = make("SR_manaGauge",  "33%", 40, 80, 220)
+  SR.enemyGauge = make("SR_enemyGauge", "66%", 200, 120, 20)
+  SR.enemyGauge:hide()
+end
+
+function SR.layoutGauges()
+  if not SR.hpGauge then return end
+  local y = SR.gaugeY()
+  SR.hpGauge:move(nil, y)
+  SR.manaGauge:move(nil, y)
+  SR.enemyGauge:move(nil, y)
+end
+
+function SR.redrawGauges()
+  SR.buildGauges()
+  local s = SR.state
+  local maxhp = math.max(s.maxhp, 1)
+  local maxmana = math.max(s.maxmana, 1)
+  SR.hpGauge:setValue(math.min(s.hp, maxhp), maxhp,
+    string.format("HP %d / %d", s.hp, s.maxhp))
+  SR.manaGauge:setValue(math.min(s.mana, maxmana), maxmana,
+    string.format("Mana %d / %d", s.mana, s.maxmana))
+  if s.enemy == nil or s.enemy == "" then
+    SR.enemyGauge:hide()
+  else
+    SR.enemyGauge:show()
+    SR.enemyGauge:setValue(math.max(0, math.min(s.enemypct, 100)), 100,
+      string.format("%s %d%%", s.enemy, s.enemypct))
+  end
+end
+
+function SR.onVitals()
+  local v = gmcp and gmcp.char and gmcp.char.vitals
+  if not v then return end
+  SR.state.hp = tonumber(v.hp) or SR.state.hp
+  SR.state.mana = tonumber(v.mana) or SR.state.mana
+  SR.redrawGauges()
+end
+
+function SR.onMaxStats()
+  local m = gmcp and gmcp.char and gmcp.char.maxstats
+  if not m then return end
+  SR.state.maxhp = tonumber(m.maxhp) or SR.state.maxhp
+  SR.state.maxmana = tonumber(m.maxmana) or SR.state.maxmana
+  SR.redrawGauges()
+end
+
+function SR.onStatus()
+  local c = gmcp and gmcp.char and gmcp.char.status
+  if not c then return end
+  SR.state.enemy = c.enemy or ""
+  SR.state.enemypct = tonumber(c.enemypct) or 0
+  SR.redrawGauges()
+end
+
+if SR.resizeHandler then killAnonymousEventHandler(SR.resizeHandler) end
+SR.resizeHandler = registerAnonymousEventHandler("sysWindowResizeEvent", SR.layoutGauges)
+
+-- Draw straight away from data that arrived before this package loaded
+-- (installing mid-session): the game only resends vitals when they change.
+SR.onMaxStats()
+SR.onVitals()
+SR.onStatus()
+</script>
+				<eventHandlerList></eventHandlerList>
+			</Script>
+			<Script isActive="yes" isFolder="no">
+				<name>SR Mapper (library)</name>
+				<packageName></packageName>
+				<script>-- Shattered Realms: automatic map from gmcp.room.info.
+-- Room vnum is used directly as the Mudlet room id.
+SR = SR or {}
+SR.map = SR.map or { last = nil, exits = {}, pending = {} }
+
+SR.DIRS = {
+  n = { name = "north", dx = 0,  dy = 1,  dz = 0 },
+  s = { name = "south", dx = 0,  dy = -1, dz = 0 },
+  e = { name = "east",  dx = 1,  dy = 0,  dz = 0 },
+  w = { name = "west",  dx = -1, dy = 0,  dz = 0 },
+  u = { name = "up",    dx = 0,  dy = 0,  dz = 1 },
+  d = { name = "down",  dx = 0,  dy = 0,  dz = -1 },
+}
+
+function SR.areaFor(zone)
+  if zone == nil or zone == "" then zone = "Unknown" end
+  local t = getAreaTable() or {}
+  if not t[zone] then
+    addAreaName(zone)
+    t = getAreaTable() or {}
+  end
+  return t[zone]
+end
+
+-- Which direction leads from room 'from' to room 'to', per the exits we saw there.
+function SR.dirTo(from, to)
+  local ex = SR.map.exits[from]
+  if not ex then return nil end
+  for d, target in pairs(ex) do
+    if target == to and SR.DIRS[d] then return d end
+  end
+  return nil
+end
+
+function SR.linkExit(from, dirKey, target)
+  setExit(from, target, SR.DIRS[dirKey].name)
+end
+
+function SR.onRoom()
+  local r = gmcp and gmcp.room and gmcp.room.info
+  if not r or r.num == nil then return end
+  local num = tonumber(r.num)
+  -- -1 means the character cannot see: keep the old position, draw nothing.
+  if not num or num &lt; 0 then return end
+  local exits = r.exits or {}
+  local prev = SR.map.last
+  local areaId = SR.areaFor(r.zone)
+
+  if not roomExists(num) then
+    addRoom(num)
+    local x, y, z = 0, 0, 0
+    local guessed = false
+    if prev and roomExists(prev) then
+      local px, py, pz = getRoomCoordinates(prev)
+      local dir = SR.dirTo(prev, num)
+      if dir then
+        local o = SR.DIRS[dir]
+        x, y, z = px + o.dx, py + o.dy, pz + o.dz
+      else
+        -- Arrived some other way (portal, recall, ...): park it beside the
+        -- previous room and flag it so the player can see it is a guess.
+        x, y, z = px + 3, py, pz
+        guessed = true
+      end
+    end
+    setRoomArea(num, areaId)
+    setRoomCoordinates(num, x, y, z)
+    if guessed then setRoomChar(num, "?") end
+    -- Rooms that already pointed at this one can now be linked.
+    local waiting = SR.map.pending[num]
+    if waiting then
+      for _, p in ipairs(waiting) do
+        if roomExists(p.from) then SR.linkExit(p.from, p.dir, num) end
+      end
+      SR.map.pending[num] = nil
+    end
+  end
+
+  setRoomName(num, r.name or "")
+  setRoomUserData(num, "terrain", r.terrain or "")
+  setRoomUserData(num, "zone", r.zone or "")
+
+  for d, target in pairs(exits) do
+    if SR.DIRS[d] and type(target) == "number" then
+      if roomExists(target) then
+        SR.linkExit(num, d, target)
+      else
+        setRoomUserData(num, "pending_" .. d, tostring(target))
+        local list = SR.map.pending[target] or {}
+        SR.map.pending[target] = list
+        local dup = false
+        for _, p in ipairs(list) do
+          if p.from == num and p.dir == d then dup = true end
+        end
+        if not dup then table.insert(list, { from = num, dir = d }) end
+      end
+    end
+  end
+
+  SR.map.exits[num] = exits
+  SR.map.last = num
+  centerview(num)
+end
+
+-- Register the GMCP event handlers. This script loads after the gauges script,
+-- so SR.onVitals / SR.onMaxStats / SR.onStatus / SR.onRoom are all defined here.
+SR.handlerIds = SR.handlerIds or {}
+local function reg(event, fn)
+  if SR.handlerIds[event] then killAnonymousEventHandler(SR.handlerIds[event]) end
+  SR.handlerIds[event] = registerAnonymousEventHandler(event, fn)
+end
+reg("gmcp.char.vitals", SR.onVitals)
+reg("gmcp.char.maxstats", SR.onMaxStats)
+reg("gmcp.char.status", SR.onStatus)
+reg("gmcp.room.info", SR.onRoom)
+</script>
+				<eventHandlerList></eventHandlerList>
+			</Script>
+		</ScriptGroup>
+	</ScriptPackage>
+</MudletPackage>
