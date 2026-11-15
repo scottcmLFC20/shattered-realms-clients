@@ -111,6 +111,21 @@ SR.onStatus()
 SR = SR or {}
 SR.map = SR.map or { last = nil, exits = {}, pending = {} }
 
+-- Map info box: Mudlet's built-in one shows the room id number. Swap it for
+-- one that shows only the room and area names. Needs Mudlet 4.11+; on older
+-- versions pcall skips this and the default box stays.
+pcall(function()
+  registerMapInfo("Shattered Realms", function(roomId, selectionSize, areaId)
+    if not roomId or roomId == -1 or not roomExists(roomId) then return "" end
+    local area = areaId and getRoomAreaName(areaId)
+    if type(area) ~= "string" then area = "" end
+    return string.format("Room: %s\nArea: %s", getRoomName(roomId) or "", area)
+  end)
+  disableMapInfo("Short")
+  disableMapInfo("Full")
+  enableMapInfo("Shattered Realms")
+end)
+
 SR.DIRS = {
   n = { name = "north", dx = 0,  dy = 1,  dz = 0 },
   s = { name = "south", dx = 0,  dy = -1, dz = 0 },
