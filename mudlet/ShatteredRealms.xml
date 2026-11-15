@@ -106,7 +106,8 @@ SR.onStatus()
 				<name>SR Mapper (library)</name>
 				<packageName></packageName>
 				<script>-- Shattered Realms: automatic map from gmcp.room.info.
--- Room vnum is used directly as the Mudlet room id.
+-- The room number the game sends is used directly as the Mudlet room id.
+-- (It is a stable per-room id, not the game's internal room number.)
 SR = SR or {}
 SR.map = SR.map or { last = nil, exits = {}, pending = {} }
 
